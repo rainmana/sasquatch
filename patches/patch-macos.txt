@@ -1,0 +1,122 @@
+diff --strip-trailing-cr -NBbaur squashfs-tools/unsquashfs.c squashfs-tools-patched/unsquashfs.c
+--- squashfs-tools/unsquashfs.c	2016-08-25 09:06:22.983529595 -0400
++++ squashfs-tools-patched/unsquashfs.c	2016-08-25 09:06:03.223530354 -0400
+@@ -31,7 +31,11 @@
+ #include "stdarg.h"
+ 
+-#include <sys/sysinfo.h>
++#ifdef __linux__
++#include <sys/sysinfo.h>
++#include <sys/sysmacros.h>
++#else
++#include <sys/sysctl.h>
++#endif
+ #include <sys/types.h>
+-#include <sys/sysmacros.h>
+ #include <sys/time.h>
+ #include <sys/resource.h>
+@@ -1442,7 +1446,10 @@
+ 			int match = use_regex ?
+ 				regexec(path->name[i].preg, name, (size_t) 0,
+ 				NULL, 0) == 0 : fnmatch(path->name[i].name,
+-				name, FNM_PATHNAME|FNM_PERIOD|FNM_EXTMATCH) ==
++				name, FNM_PATHNAME|FNM_PERIOD
++#ifdef FNM_EXTMATCH
++				|FNM_EXTMATCH
++#endif
+ 				0;
+ 
+diff --strip-trailing-cr -NBbaur squashfs-tools/unsquashfs_info.c squashfs-tools-patched/unsquashfs_info.c
+--- squashfs-tools/unsquashfs_info.c	2016-08-25 09:06:22.983529595 -0400
++++ squashfs-tools-patched/unsquashfs_info.c	2016-08-25 09:06:03.223530354 -0400
+@@ -22,6 +22,10 @@
+  * unsquashfs_info.c
+  */
+ 
++#define _POSIX_C_SOURCE 200809L
++#ifdef __APPLE__
++#define _DARWIN_C_SOURCE
++#endif
++
+ #include <pthread.h>
+ #include <sys/ioctl.h>
+ #include <unistd.h>
+@@ -100,7 +104,15 @@
+ 	sigaddset(&sigmask, SIGHUP);
+ 
+ 	while(1) {
+-		if(waiting)
++#ifdef __APPLE__
++		// macOS doesn't support sigtimedwait/sigwaitinfo, use sigwait instead
++		int sig_num;
++		if(sigwait(&sigmask, &sig_num) == 0) {
++			sig = sig_num;
++		} else {
++			sig = -1;
++		}
++#else
++		if(waiting)
+ 			sig = sigtimedwait(&sigmask, NULL, &timespec);
+ 		else
+ 			sig = sigwaitinfo(&sigmask, NULL);
++#endif
+ 
+ 		if(sig == -1) {
+@@ -102,7 +114,9 @@
+ void *info_thrd(void *arg)
+ {
+ 	sigset_t sigmask;
+-	struct timespec timespec = { .tv_sec = 1, .tv_nsec = 0 };
++#ifndef __APPLE__
++	struct timespec timespec = { .tv_sec = 1, .tv_nsec = 0 };
++#endif
+ 	int sig, waiting = 0;
+ 
+diff --strip-trailing-cr -NBbaur squashfs-tools/unsquashfs_xattr.c squashfs-tools-patched/unsquashfs_xattr.c
+--- squashfs-tools/unsquashfs_xattr.c	2016-08-25 09:06:22.983529595 -0400
++++ squashfs-tools-patched/unsquashfs_xattr.c	2016-08-25 09:06:03.223530354 -0400
+@@ -25,6 +25,14 @@
+ #include "unsquashfs.h"
+ #include "xattr.h"
+ 
+ #include <sys/xattr.h>
++
++#ifdef __APPLE__
++// macOS uses setxattr/getxattr instead of lsetxattr/lgetxattr
++#define lsetxattr(path, name, value, size, flags) setxattr(path, name, value, size, 0, flags)
++#define lgetxattr(path, name, value, size) getxattr(path, name, value, size, 0, 0)
++#define llistxattr(path, list, size) listxattr(path, list, size, XATTR_NOFOLLOW)
++#define lremovexattr(path, name) removexattr(path, name, XATTR_NOFOLLOW)
++#endif
+ 
+ #define NOSPACE_MAX 10
+ 
+diff --strip-trailing-cr -NBbaur squashfs-tools/Makefile squashfs-tools-patched/Makefile
+--- squashfs-tools/Makefile	2016-08-25 09:06:22.983529595 -0400
++++ squashfs-tools-patched/Makefile	2016-08-25 09:06:03.223530354 -0400
+@@ -125,6 +125,9 @@
+ 	-D_LARGEFILE_SOURCE -D_GNU_SOURCE -DCOMP_DEFAULT=\"$(COMP_DEFAULT)\" \
+ 	-Wall -Werror #-DSQUASHFS_TRACE
+ 
++# Compile LZMA files without -Werror to avoid warnings in third-party code
++LZMA_CFLAGS = $(filter-out -Werror,$(CFLAGS))
++
+ LIBS = -lpthread -lm
+ @@ -320,6 +323,10 @@
+ lzmadaptive:
+ 	make -C $(LZMA_ADAPT_DIR)
+ 
++# Compile LZMA files without -Werror
++$(LZMA_DIR)/C/%.o: $(LZMA_DIR)/C/%.c
++	$(CC) $(LZMA_CFLAGS) -c -o $@ $<
++
+ # CJH: Added lzmalt, lzmadaptive
+ .PHONY: clean
+@@ -27,7 +27,7 @@
+ # To build using XZ Utils liblzma - install the library and uncomment
+ # the XZ_SUPPORT line below.
+ #
+-XZ_SUPPORT = 1
++# Temporarily disabled for macOS compatibility - xz API compatibility issues
++#XZ_SUPPORT = 1
+

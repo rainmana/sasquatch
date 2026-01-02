@@ -14,11 +14,19 @@ Very beta.
 Prerequisites
 =============
 
-You need a C/C++ compiler, plus the liblzma, liblzo and zlib development libraries:
+You need a C/C++ compiler, plus the liblzma, liblzo and zlib development libraries.
 
+**On Linux (Debian/Ubuntu):**
 ```bash
 $ sudo apt-get install build-essential liblzma-dev liblzo2-dev zlib1g-dev
 ```
+
+**On macOS (including Apple Silicon):**
+```bash
+$ brew install xz lzo zlib
+```
+
+Note: Homebrew is required for macOS. If you don't have it installed, get it from https://brew.sh
 
 Installation
 ============
@@ -28,3 +36,5 @@ The included `build.sh` script will download squashfs-tools v4.3, patch the sour
 ```bash
 $ ./build.sh
 ```
+
+The script automatically detects your operating system and installs the appropriate dependencies.
